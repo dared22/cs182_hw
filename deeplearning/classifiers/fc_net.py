@@ -136,6 +136,7 @@ class FullyConnectedNet(object):
         self.num_layers = 1 + len(hidden_dims)
         self.dtype = dtype
         self.params = {}
+        
 
         ############################################################################
         # TODO: Initialize the parameters of the network, storing all values in    #
@@ -149,7 +150,18 @@ class FullyConnectedNet(object):
         # beta2, etc. Scale parameters should be initialized to one and shift      #
         # parameters should be initialized to zero.                                #
         ############################################################################
-        pass
+        self.params[f'W1'] = np.random.randn(input_dim, hidden_dims[0]) * weight_scale
+        self.params[f'b1'] = np.zeros(hidden_dims[0])
+        
+        for i in range(1, self.num_layers - 1):
+            self.params[f'W{i + 1}'] = np.random.randn(hidden_dims[i - 1], hidden_dims[i]) * weight_scale
+            self.params[f'b{i + 1}'] = np.zeros(hidden_dims[i])
+            if self.use_batchnorm:
+                self.params[f'gamma{i + 1}'] = np.ones(hidden_dims[i])
+                self.params[f'beta{i + 1}'] = np.zeros(hidden_dims[i])
+
+        self.params[f'W{self.num_layers}'] = np.random.randn(hidden_dims[-1], num_classes) * weight_scale
+        self.params[f'b{self.num_layers}'] = np.zeros(num_classes)
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
@@ -206,7 +218,23 @@ class FullyConnectedNet(object):
         # self.bn_params[1] to the forward pass for the second batch normalization #
         # layer, etc.                                                              #
         ############################################################################
-        pass
+        # In the forward pass for hidden layers
+        out, cache1 = affine_forward(X, self.params[f'W1'], self.params[f'b1'])
+        out, cache_relu1 = relu_forward(out)
+
+        caches = [(cache1, cache_relu1)]
+
+        # Hidden layers: affine - relu
+        for layer in range(1, self.num_layers - 1):  # Fix loop to handle hidden layers only
+            out, cache_affine = affine_forward(out, self.params[f'W{layer + 1}'], self.params[f'b{layer + 1}'])
+            out, cache_relu = relu_forward(out)
+            caches.append((cache_affine, cache_relu))
+
+        # Last affine layer (no ReLU)
+        scores, cache_affine_last = affine_forward(out, self.params[f'W{self.num_layers}'], self.params[f'b{self.num_layers}'])
+        caches.append((cache_affine_last, None))  # Cache the final layer separately
+
+
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
@@ -230,7 +258,25 @@ class FullyConnectedNet(object):
         # automated tests, make sure that your L2 regularization includes a factor #
         # of 0.5 to simplify the expression for the gradient.                      #
         ############################################################################
-        pass
+                # Compute the softmax loss and its gradient
+        loss, dscores = softmax_loss(scores, y)
+
+        # L2 regularization on weights
+        for layer in range(1, self.num_layers + 1):
+            W = self.params[f'W{layer}']
+            loss += 0.5 * self.reg * np.sum(W ** 2)
+
+        grads = {}
+
+        # Backward pass for the final (output) layer
+        da, grads[f'W{self.num_layers}'], grads[f'b{self.num_layers}'] = affine_backward(dscores, caches[-1][0])
+
+         #Backprop through hidden layers
+        for layer in range(self.num_layers - 1, 0, -1):
+           cache_affine, cache_relu = caches[layer - 1]
+           da = relu_backward(da, cache_relu)  # ReLU backward
+           da, grads[f'W{layer}'], grads[f'b{layer}'] = affine_backward(da, cache_affine)  # Affine backward
+           grads[f'W{layer}'] += self.reg * self.params[f'W{layer}']  # Regularization
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
