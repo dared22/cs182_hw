@@ -152,13 +152,16 @@ class FullyConnectedNet(object):
         ############################################################################
         self.params[f'W1'] = np.random.randn(input_dim, hidden_dims[0]) * weight_scale
         self.params[f'b1'] = np.zeros(hidden_dims[0])
+        if self.use_batchnorm:
+            self.params['gamma1'] = np.ones(hidden_dims[0])
+            self.params['beta1'] = np.zeros(hidden_dims[0])
         
         for i in range(1, self.num_layers - 1):
-            self.params[f'W{i + 1}'] = np.random.randn(hidden_dims[i - 1], hidden_dims[i]) * weight_scale
-            self.params[f'b{i + 1}'] = np.zeros(hidden_dims[i])
             if self.use_batchnorm:
                 self.params[f'gamma{i + 1}'] = np.ones(hidden_dims[i])
                 self.params[f'beta{i + 1}'] = np.zeros(hidden_dims[i])
+            self.params[f'W{i + 1}'] = np.random.randn(hidden_dims[i - 1], hidden_dims[i]) * weight_scale
+            self.params[f'b{i + 1}'] = np.zeros(hidden_dims[i])
 
         self.params[f'W{self.num_layers}'] = np.random.randn(hidden_dims[-1], num_classes) * weight_scale
         self.params[f'b{self.num_layers}'] = np.zeros(num_classes)
@@ -206,6 +209,7 @@ class FullyConnectedNet(object):
                 bn_param[mode] = mode
 
         scores = None
+        caches = []
         ############################################################################
         # TODO: Implement the forward pass for the fully-connected net, computing  #
         # the class scores for X and storing them in the scores variable.          #
@@ -219,21 +223,41 @@ class FullyConnectedNet(object):
         # layer, etc.                                                              #
         ############################################################################
         # In the forward pass for hidden layers
-        out, cache1 = affine_forward(X, self.params[f'W1'], self.params[f'b1'])
-        out, cache_relu1 = relu_forward(out)
 
-        caches = [(cache1, cache_relu1)]
 
-        # Hidden layers: affine - relu
-        for layer in range(1, self.num_layers - 1):  # Fix loop to handle hidden layers only
-            out, cache_affine = affine_forward(out, self.params[f'W{layer + 1}'], self.params[f'b{layer + 1}'])
-            out, cache_relu = relu_forward(out)
-            caches.append((cache_affine, cache_relu))
+        out = X
+        if self.use_batchnorm:
+            # Affine forward
+            out, cache_affine1 = affine_forward(out, self.params['W1'], self.params['b1'])
+            # BatchNorm forward
+            out, cache_bn1 = batchnorm_forward(out, self.params['gamma1'], self.params['beta1'], self.bn_params[0])
+            # ReLU forward
+            out, cache_relu1 = relu_forward(out)
+            caches.append((cache_affine1, cache_bn1, cache_relu1))
+        else:
+            # Affine forward
+            out, cache_affine1 = affine_forward(out, self.params['W1'], self.params['b1'])
+            # ReLU forward
+            out, cache_relu1 = relu_forward(out)
+            caches.append((cache_affine1, None, cache_relu1))
+
+
+        
+        for layer in range(1, self.num_layers - 1):
+            if self.use_batchnorm:
+              out, cache_affine = affine_forward(out, self.params[f'W{layer + 1}'], self.params[f'b{layer + 1}'])
+              out, cache_bn = batchnorm_forward(out, self.params[f'gamma{layer + 1}'], self.params[f'beta{layer + 1}'], self.bn_params[layer])
+              out, cache_relu = relu_forward(out)
+              caches.append((cache_affine, cache_bn, cache_relu)) 
+            
+            else: 
+              out, cache_affine = affine_forward(out, self.params[f'W{layer + 1}'], self.params[f'b{layer + 1}'])
+              out, cache_relu = relu_forward(out)
+              caches.append((cache_affine,None ,cache_relu))
 
         # Last affine layer (no ReLU)
         scores, cache_affine_last = affine_forward(out, self.params[f'W{self.num_layers}'], self.params[f'b{self.num_layers}'])
-        caches.append((cache_affine_last, None))  # Cache the final layer separately
-
+        caches.append((cache_affine_last, None))  
 
         ############################################################################
         #                             END OF YOUR CODE                             #
@@ -273,10 +297,22 @@ class FullyConnectedNet(object):
 
          #Backprop through hidden layers
         for layer in range(self.num_layers - 1, 0, -1):
-           cache_affine, cache_relu = caches[layer - 1]
-           da = relu_backward(da, cache_relu)  # ReLU backward
-           da, grads[f'W{layer}'], grads[f'b{layer}'] = affine_backward(da, cache_affine)  # Affine backward
-           grads[f'W{layer}'] += self.reg * self.params[f'W{layer}']  # Regularization
+            cache_affine, _ ,cache_relu = caches[layer - 1]
+            
+            # Backprop through ReLU
+            da = relu_backward(da, cache_relu)
+        
+            # If using batch normalization, backprop through BatchNorm
+            if self.use_batchnorm:
+                cache_bn = caches[layer - 1][1]  # Get the batch norm cache if using batch norm
+                da, grads[f'gamma{layer}'], grads[f'beta{layer}'] = batchnorm_backward_alt(da, cache_bn)
+            else:
+                grads[f'gamma{layer}'] = 0  
+                grads[f'beta{layer}'] = 0  
+        
+            # Backprop through affine layer
+            da, grads[f'W{layer}'], grads[f'b{layer}'] = affine_backward(da, cache_affine)
+            grads[f'W{layer}'] += self.reg * self.params[f'W{layer}']
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################

@@ -132,11 +132,7 @@ def adam(x, dx, config=None):
     config.setdefault('t', 0)
 
     next_x = None
-    #############################################################################
-    # TODO: Implement the Adam update formula, storing the next value of x in   #
-    # the next_x variable. Don't forget to update the m, v, and t variables     #
-    # stored in config and to use the epsilon scalar to avoid dividing by zero. #
-    #############################################################################
+    
     learning_rate = config['learning_rate']
     beta1 = config['beta1']
     beta2 = config['beta2']
@@ -163,8 +159,6 @@ def adam(x, dx, config=None):
 
     # Update parameters
     next_x = x - learning_rate * m_hat / (np.sqrt(v_hat) + epsilon)
-    #############################################################################
-    #                             END OF YOUR CODE                              #
-    #############################################################################
+
 
     return next_x, config
