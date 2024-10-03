@@ -155,11 +155,11 @@ class FullyConnectedNet(object):
         if self.use_batchnorm:
             self.params['gamma1'] = np.ones(hidden_dims[0])
             self.params['beta1'] = np.zeros(hidden_dims[0])
-        
-        for i in range(1, self.num_layers - 1):
-            if self.use_batchnorm:
+            for i in range(1, self.num_layers - 1):
                 self.params[f'gamma{i + 1}'] = np.ones(hidden_dims[i])
                 self.params[f'beta{i + 1}'] = np.zeros(hidden_dims[i])
+        
+        for i in range(1, self.num_layers - 1):
             self.params[f'W{i + 1}'] = np.random.randn(hidden_dims[i - 1], hidden_dims[i]) * weight_scale
             self.params[f'b{i + 1}'] = np.zeros(hidden_dims[i])
 
@@ -245,15 +245,19 @@ class FullyConnectedNet(object):
         
         for layer in range(1, self.num_layers - 1):
             if self.use_batchnorm:
-              out, cache_affine = affine_forward(out, self.params[f'W{layer + 1}'], self.params[f'b{layer + 1}'])
-              out, cache_bn = batchnorm_forward(out, self.params[f'gamma{layer + 1}'], self.params[f'beta{layer + 1}'], self.bn_params[layer])
-              out, cache_relu = relu_forward(out)
-              caches.append((cache_affine, cache_bn, cache_relu)) 
-            
-            else: 
-              out, cache_affine = affine_forward(out, self.params[f'W{layer + 1}'], self.params[f'b{layer + 1}'])
-              out, cache_relu = relu_forward(out)
-              caches.append((cache_affine,None ,cache_relu))
+                out, cache_affine = affine_forward(out, self.params[f'W{layer + 1}'], self.params[f'b{layer + 1}'])
+                out, cache_bn = batchnorm_forward(out, self.params[f'gamma{layer + 1}'], self.params[f'beta{layer + 1}'], self.bn_params[layer])
+                out, cache_relu = relu_forward(out)
+                caches.append((cache_affine, cache_bn, cache_relu))
+            else:
+                out, cache_affine = affine_forward(out, self.params[f'W{layer + 1}'], self.params[f'b{layer + 1}'])
+                out, cache_relu = relu_forward(out)
+                caches.append((cache_affine, None, cache_relu))
+
+            # Apply dropout if enabled
+            if self.use_dropout:
+                out, cache_dropout = dropout_forward(out, self.dropout_param)
+                caches[-1] = caches[-1] + (cache_dropout,)
 
         # Last affine layer (no ReLU)
         scores, cache_affine_last = affine_forward(out, self.params[f'W{self.num_layers}'], self.params[f'b{self.num_layers}'])
@@ -297,19 +301,22 @@ class FullyConnectedNet(object):
 
          #Backprop through hidden layers
         for layer in range(self.num_layers - 1, 0, -1):
-            cache_affine, _ ,cache_relu = caches[layer - 1]
-            
+            cache_affine, cache_bn, cache_relu = caches[layer - 1][:3]
+            cache_dropout = caches[layer - 1][3] if len(caches[layer - 1]) > 3 else None
+
             # Backprop through ReLU
             da = relu_backward(da, cache_relu)
-        
+
+            # Apply dropout during the backward pass if dropout is enabled
+            if self.use_dropout and cache_dropout is not None:
+                da = dropout_backward(da, cache_dropout)
+
             # If using batch normalization, backprop through BatchNorm
             if self.use_batchnorm:
                 cache_bn = caches[layer - 1][1]  # Get the batch norm cache if using batch norm
                 da, grads[f'gamma{layer}'], grads[f'beta{layer}'] = batchnorm_backward_alt(da, cache_bn)
-            else:
-                grads[f'gamma{layer}'] = 0  
-                grads[f'beta{layer}'] = 0  
-        
+
+
             # Backprop through affine layer
             da, grads[f'W{layer}'], grads[f'b{layer}'] = affine_backward(da, cache_affine)
             grads[f'W{layer}'] += self.reg * self.params[f'W{layer}']
