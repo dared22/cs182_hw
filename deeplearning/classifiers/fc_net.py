@@ -227,17 +227,12 @@ class FullyConnectedNet(object):
 
         out = X
         if self.use_batchnorm:
-            # Affine forward
             out, cache_affine1 = affine_forward(out, self.params['W1'], self.params['b1'])
-            # BatchNorm forward
             out, cache_bn1 = batchnorm_forward(out, self.params['gamma1'], self.params['beta1'], self.bn_params[0])
-            # ReLU forward
             out, cache_relu1 = relu_forward(out)
             caches.append((cache_affine1, cache_bn1, cache_relu1))
         else:
-            # Affine forward
             out, cache_affine1 = affine_forward(out, self.params['W1'], self.params['b1'])
-            # ReLU forward
             out, cache_relu1 = relu_forward(out)
             caches.append((cache_affine1, None, cache_relu1))
 
@@ -254,12 +249,10 @@ class FullyConnectedNet(object):
                 out, cache_relu = relu_forward(out)
                 caches.append((cache_affine, None, cache_relu))
 
-            # Apply dropout if enabled
             if self.use_dropout:
                 out, cache_dropout = dropout_forward(out, self.dropout_param)
                 caches[-1] = caches[-1] + (cache_dropout,)
 
-        # Last affine layer (no ReLU)
         scores, cache_affine_last = affine_forward(out, self.params[f'W{self.num_layers}'], self.params[f'b{self.num_layers}'])
         caches.append((cache_affine_last, None))  
 
@@ -289,35 +282,27 @@ class FullyConnectedNet(object):
                 # Compute the softmax loss and its gradient
         loss, dscores = softmax_loss(scores, y)
 
-        # L2 regularization on weights
         for layer in range(1, self.num_layers + 1):
             W = self.params[f'W{layer}']
             loss += 0.5 * self.reg * np.sum(W ** 2)
 
         grads = {}
 
-        # Backward pass for the final (output) layer
         da, grads[f'W{self.num_layers}'], grads[f'b{self.num_layers}'] = affine_backward(dscores, caches[-1][0])
 
-         #Backprop through hidden layers
         for layer in range(self.num_layers - 1, 0, -1):
             cache_affine, cache_bn, cache_relu = caches[layer - 1][:3]
             cache_dropout = caches[layer - 1][3] if len(caches[layer - 1]) > 3 else None
 
-            # Backprop through ReLU
             da = relu_backward(da, cache_relu)
 
-            # Apply dropout during the backward pass if dropout is enabled
             if self.use_dropout and cache_dropout is not None:
                 da = dropout_backward(da, cache_dropout)
 
-            # If using batch normalization, backprop through BatchNorm
             if self.use_batchnorm:
                 cache_bn = caches[layer - 1][1]  # Get the batch norm cache if using batch norm
                 da, grads[f'gamma{layer}'], grads[f'beta{layer}'] = batchnorm_backward_alt(da, cache_bn)
 
-
-            # Backprop through affine layer
             da, grads[f'W{layer}'], grads[f'b{layer}'] = affine_backward(da, cache_affine)
             grads[f'W{layer}'] += self.reg * self.params[f'W{layer}']
         ############################################################################
